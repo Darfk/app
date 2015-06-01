@@ -1,25 +1,27 @@
 /*
  Provides a wrapper for opening and closing sockets, handling OS signals and serving http
 */
+
 package app
 
 import (
+	"log"
 	"net"
 	"net/http"
-	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
 type App struct {
-	server http.Server
-	listener net.Listener
-	handler http.Handler
-	Init func()
+	server         http.Server
+	listener       net.Listener
+	handler        http.Handler
+	Addr           string
+	Family         string
+	Init           func()
 	ProvideHandler func() (handler http.Handler, err error)
-	Shutdown func()
+	Shutdown       func()
 }
 
 func (app *App) Serve() {
@@ -28,36 +30,32 @@ func (app *App) Serve() {
 		app.Init()
 	}
 
-	var family string
-	var address string
-
-	flag.StringVar(&family, "app.family", "tcp4", "unix, tcp, tcp4 or tcp6")	
-	flag.StringVar(&address, "app.address", ":8000", "eg. :8000 or /var/app.sock")
-
-	flag.Parse()
-
 	var err error
 
 	app.handler, err = app.ProvideHandler()
 
-	if err != nil { log.Fatal(err) }
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	app.listener, err = net.Listen(family, address)
-	if err != nil { log.Fatal(err) }
+	app.listener, err = net.Listen(app.Family, app.Addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	if family == "unix" {
-		os.Chmod(address, 0777)
+	if app.Family == "unix" {
+		os.Chmod(app.Addr, 0777)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	log.Printf("listening on %s %s", family, address)
+	log.Printf("listening on %s %s", app.Family, app.Addr)
 
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
-		sig := <-c		
+		sig := <-c
 		log.Printf("terminated with %s\n", sig)
 		app.listener.Close()
 
